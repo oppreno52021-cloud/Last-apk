@@ -17,25 +17,35 @@ export async function exportFile({
   let savedNatively = false;
 
   // 1. Android Native APK (Capacitor Native Platform):
-  // Saves file directly into user storage Downloads / Documents folder
+  // Saves file directly into user storage Downloads / Documents folder without opening any share sheet
   if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
     try {
-      // Attempt writing to Downloads folder under External Storage
+      // Check and request storage permissions if required on Android
+      try {
+        const perm = await Filesystem.checkPermissions();
+        if (perm.publicStorage !== 'granted') {
+          await Filesystem.requestPermissions();
+        }
+      } catch (pErr) {
+        // Permissions not needed or auto-granted on modern Android Scoped Storage
+      }
+
+      // First attempt: write to Public Documents directory
       try {
         await Filesystem.writeFile({
-          path: `Download/${filename}`,
+          path: filename,
           data: content,
-          directory: Directory.ExternalStorage,
+          directory: Directory.Documents,
           encoding: Encoding.UTF8,
           recursive: true,
         });
         savedNatively = true;
       } catch {
-        // Fallback: write to Documents folder
+        // Fallback: write to Downloads folder under External Storage
         await Filesystem.writeFile({
-          path: filename,
+          path: `Download/${filename}`,
           data: content,
-          directory: Directory.Documents,
+          directory: Directory.ExternalStorage,
           encoding: Encoding.UTF8,
           recursive: true,
         });

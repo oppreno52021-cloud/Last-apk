@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Fingerprint, Delete, Shield, CheckCircle2, Lock, Clock, Info, LogOut } from 'lucide-react';
+import { Fingerprint, Delete, CheckCircle2, Lock, Clock, LogOut } from 'lucide-react';
 import { triggerHaptic } from '../../utils/haptics';
 import { isBiometricsSupported, authenticateWithBiometrics } from '../../utils/biometrics';
 import { normalizeArabicNumerals } from '../../utils/calculations';
-import { useBackHandler } from '../../hooks/useBackHandler';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 
@@ -26,7 +25,6 @@ export const LockScreen: React.FC<LockScreenProps> = ({
   const [errorShake, setErrorShake] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isBiometricChecking, setIsBiometricChecking] = useState(false);
-  const [showForgotSecurityNotice, setShowForgotSecurityNotice] = useState(false);
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
   const [lockoutSecondsLeft, setLockoutSecondsLeft] = useState<number>(0);
   const [statusMessage, setStatusMessage] = useState<string>(() => {
@@ -85,6 +83,8 @@ export const LockScreen: React.FC<LockScreenProps> = ({
     }, 300);
   }, [language, onUnlock]);
 
+  const [showPinFallback, setShowPinFallback] = useState(false);
+
   const handleBiometricAuth = useCallback(async () => {
     if (isSuccess) return;
     triggerHaptic('medium');
@@ -97,34 +97,22 @@ export const LockScreen: React.FC<LockScreenProps> = ({
 
       if (res.success) {
         handleUnlockSuccess();
-      } else if (res.error === 'unsupported') {
-        setStatusMessage(
-          language === 'ar'
-            ? 'البصمة غير مدعومة في هذا الجهاز'
-            : 'Biometrics not supported on this device'
-        );
       } else if (res.error === 'cancelled_or_denied') {
-        setStatusMessage(
-          lockoutSecondsLeft > 0
-            ? (language === 'ar' ? `المحاولات مقفلة. انتظر ${lockoutSecondsLeft} ثانية أو اضغط البصمة` : `Locked. Wait ${lockoutSecondsLeft}s or tap biometrics`)
-            : (pinEnabled 
-                ? (language === 'ar' ? 'تم إلغاء البصمة، استخدم الرمز (6 أرقام)' : 'Biometric cancelled, enter 6-digit PIN')
-                : (language === 'ar' ? 'تم إلغاء البصمة، اضغط على زر البصمة لإعادة المحاولة' : 'Biometric cancelled, tap button to retry'))
-        );
-      } else {
+        // User cancelled or dismissed biometric prompt -> exit app immediately
         triggerHaptic('error');
-        setErrorShake(true);
-        setStatusMessage(
-          pinEnabled
-            ? (language === 'ar' ? 'فشلت مطابقة البصمة، استخدم الرمز' : 'Biometric failed, use PIN')
-            : (language === 'ar' ? 'فشلت مطابقة البصمة، اضغط للمحاولة مرة أخرى' : 'Biometric failed, tap to retry')
-        );
-        setTimeout(() => setErrorShake(false), 500);
+        handleExitApp();
+      } else {
+        // Biometric failed or not matched -> exit app immediately
+        triggerHaptic('error');
+        setTimeout(() => {
+          handleExitApp();
+        }, 200);
       }
     } catch {
       setIsBiometricChecking(false);
+      handleExitApp();
     }
-  }, [handleUnlockSuccess, isSuccess, language, lockoutSecondsLeft, pinEnabled]);
+  }, [handleExitApp, handleUnlockSuccess, isSuccess, language]);
 
   // Auto-prompt biometrics once on mount if enabled
   useEffect(() => {
@@ -166,15 +154,14 @@ export const LockScreen: React.FC<LockScreenProps> = ({
           setLockoutSecondsLeft(lockoutTime);
           setStatusMessage(
             language === 'ar'
-              ? `محاولات خاطئة كثيرة. انتظر ${lockoutTime} ثانية أو استخدم البصمة`
-              : `Too many wrong attempts. Wait ${lockoutTime}s or use biometrics`
+              ? `يرجى الانتظار ${lockoutTime} ثانية`
+              : `Please wait ${lockoutTime}s`
           );
         } else {
-          const remaining = 5 - nextFails;
           setStatusMessage(
             language === 'ar'
-              ? `رمز المرور غير صحيح (${remaining} محاولات متبقية)`
-              : `Incorrect passcode (${remaining} attempts left)`
+              ? 'رمز المرور غير صحيح'
+              : 'Incorrect passcode'
           );
         }
 
@@ -207,13 +194,68 @@ export const LockScreen: React.FC<LockScreenProps> = ({
     setPin(prev => prev.slice(0, -1));
   };
 
-  const handleForgotPinClick = () => {
-    setShowForgotSecurityNotice(true);
-  };
-
-  useBackHandler(showForgotSecurityNotice, () => setShowForgotSecurityNotice(false), 'lock-forgot-notice');
-
   const isKeypadDisabled = lockoutSecondsLeft > 0 || isSuccess;
+
+  // Strict Biometric Minimal Mode (Black screen with only App Icon, auto-prompt, exit if not authenticated)
+  if (biometricEnabled && !showPinFallback) {
+    return (
+      <div 
+        onClick={() => {
+          if (!isBiometricChecking && !isSuccess) {
+            handleBiometricAuth();
+          }
+        }}
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-black text-white select-none cursor-pointer animate-in fade-in duration-150"
+      >
+        {/* Center: App Icon only with sleek breathing ambient glow */}
+        <div className="flex flex-col items-center justify-center -mt-8">
+          <div className="relative">
+            <div className="absolute -inset-4 bg-blue-500/20 rounded-3xl blur-2xl opacity-60 animate-pulse pointer-events-none" />
+            
+            <img 
+              src="/app-icon.png" 
+              alt="Masrofy" 
+              className={`relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl shadow-2xl transition-all duration-300 ${
+                isSuccess 
+                  ? 'scale-105 ring-4 ring-emerald-500/60 shadow-emerald-500/40' 
+                  : isBiometricChecking 
+                    ? 'scale-100 ring-2 ring-blue-500/40 animate-pulse' 
+                    : 'scale-95'
+              }`}
+            />
+          </div>
+        </div>
+
+        {/* Bottom Actions: Optional PIN Fallback & Direct Exit Button */}
+        <div className="absolute bottom-8 flex flex-col items-center gap-3">
+          {pinEnabled && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowPinFallback(true);
+              }}
+              className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors py-1 px-3 cursor-pointer"
+            >
+              {language === 'ar' ? 'استخدام رمز المرور (PIN)' : 'Use PIN Passcode'}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExitApp();
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-900/80 hover:bg-zinc-800 active:scale-95 text-zinc-400 hover:text-rose-400 text-xs font-semibold border border-zinc-800 transition-all cursor-pointer shadow-lg"
+          >
+            <LogOut size={13} />
+            <span>{language === 'ar' ? 'الخروج من التطبيق' : 'Exit App'}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 bg-black text-white select-none animate-in fade-in duration-200">
@@ -236,9 +278,6 @@ export const LockScreen: React.FC<LockScreenProps> = ({
         </div>
 
         <div>
-          <h1 className="text-xl font-black tracking-tight text-white">
-            {language === 'ar' ? 'مصروفي محمي' : 'Masrofy is Locked'}
-          </h1>
           <p className="text-xs text-zinc-400 mt-1 min-h-[1.25rem] px-2 font-medium">
             {statusMessage}
           </p>
@@ -274,73 +313,6 @@ export const LockScreen: React.FC<LockScreenProps> = ({
         )}
       </div>
 
-      {/* Biometric-Only Dedicated View (When PIN is NOT enabled) */}
-      {!pinEnabled && biometricEnabled && (
-        <div className="flex-1 flex flex-col items-center justify-center py-6 w-full max-w-xs text-center animate-in fade-in duration-300 space-y-4">
-          <div className="relative my-4">
-            <button
-              type="button"
-              onClick={handleBiometricAuth}
-              disabled={isBiometricChecking || isSuccess}
-              className={`p-8 rounded-full border transition-all cursor-pointer ${
-                isBiometricChecking 
-                  ? 'bg-blue-600/30 border-blue-500 scale-105 ring-4 ring-blue-500/30 shadow-2xl shadow-blue-500/40' 
-                  : 'bg-zinc-900 hover:bg-zinc-850 active:scale-95 border-zinc-800 shadow-2xl'
-              }`}
-            >
-              <Fingerprint size={72} className={`text-blue-400 ${isBiometricChecking ? 'animate-pulse text-blue-300' : ''}`} />
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleBiometricAuth}
-            disabled={isBiometricChecking || isSuccess}
-            className="w-full py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition-all cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Fingerprint size={18} />
-            <span>
-              {isBiometricChecking 
-                ? (language === 'ar' ? 'جارٍ فحص البصمة...' : 'Scanning...') 
-                : (language === 'ar' ? 'المصادقة بالبصمة لفتح التطبيق' : 'Authenticate with Biometrics')}
-            </span>
-          </button>
-
-          {/* Direct Exit App Button */}
-          <button
-            type="button"
-            onClick={handleExitApp}
-            className="w-full py-3.5 px-6 rounded-2xl bg-zinc-900/90 hover:bg-zinc-850 active:scale-98 border border-zinc-800 text-rose-400 hover:text-rose-300 font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
-          >
-            <LogOut size={18} />
-            <span>{language === 'ar' ? 'الخروج من التطبيق' : 'Exit App'}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Center Biometric Button (When PIN is enabled alongside biometrics) */}
-      {pinEnabled && biometricEnabled && (
-        <div className="py-1 flex flex-col items-center">
-          <button
-            type="button"
-            onClick={handleBiometricAuth}
-            disabled={isBiometricChecking || isSuccess}
-            className={`p-3.5 rounded-3xl border text-blue-400 flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-              isBiometricChecking 
-                ? 'bg-blue-600/25 border-blue-500/60 scale-105 ring-2 ring-blue-500/40' 
-                : 'bg-zinc-900 hover:bg-zinc-850 active:scale-95 border-zinc-800 shadow-lg'
-            }`}
-          >
-            <Fingerprint size={38} className={isBiometricChecking ? 'animate-pulse text-blue-300' : ''} />
-            <span className="text-[11px] font-bold text-zinc-300">
-              {isBiometricChecking 
-                ? (language === 'ar' ? 'جارٍ الفحص...' : 'Scanning...') 
-                : (language === 'ar' ? 'اضغط للمصادقة بالبصمة' : 'Tap for Biometrics')}
-            </span>
-          </button>
-        </div>
-      )}
-
       {/* Numeric Keypad (Only when PIN is enabled) */}
       {pinEnabled && (
         <div className="w-full max-w-xs pb-4 space-y-2.5" dir="ltr">
@@ -361,10 +333,15 @@ export const LockScreen: React.FC<LockScreenProps> = ({
             </button>
           ))}
           
-          {/* Bottom Row: Fingerprint Shortcut, 0, Backspace */}
+          {/* Bottom Row: Return to Biometric Icon if available, 0, Backspace */}
           <button
             type="button"
-            onClick={handleBiometricAuth}
+            onClick={() => {
+              if (biometricEnabled) {
+                setShowPinFallback(false);
+                handleBiometricAuth();
+              }
+            }}
             disabled={!biometricEnabled || isSuccess}
             className={`h-13 rounded-2xl flex items-center justify-center transition-all cursor-pointer border select-none active:scale-95 ${
               biometricEnabled 
@@ -403,84 +380,7 @@ export const LockScreen: React.FC<LockScreenProps> = ({
             <Delete size={20} />
           </button>
         </div>
-
-        {/* Secure Forgot PIN Guidance */}
-        <div className="text-center pt-1" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-          <button
-            type="button"
-            onClick={handleForgotPinClick}
-            className="text-[11px] text-zinc-400 hover:text-blue-400 underline cursor-pointer transition-colors"
-          >
-            {language === 'ar' ? 'نسيت رمز المرور؟' : 'Forgot Passcode?'}
-          </button>
-        </div>
-
-        {/* Direct Exit App Button for PIN View */}
-        <div className="pt-1.5 flex justify-center" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-          <button
-            type="button"
-            onClick={handleExitApp}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-rose-400 hover:text-rose-300 text-xs font-bold cursor-pointer transition-all active:scale-95 shadow-md"
-          >
-            <LogOut size={14} />
-            <span>{language === 'ar' ? 'الخروج من التطبيق' : 'Exit App'}</span>
-          </button>
-        </div>
       </div>
-      )}
-
-      {/* Secure Forgot PIN Modal (No Wipe, Biometric Recovery Only) */}
-      {showForgotSecurityNotice && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/90 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-3xl p-5 shadow-2xl space-y-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center mx-auto">
-              <Shield size={24} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-white">
-                {language === 'ar' ? 'استعادة الوصول بأمان' : 'Secure Access Recovery'}
-              </h3>
-              <p className="text-xs text-zinc-300 mt-2 leading-relaxed text-start">
-                {language === 'ar' 
-                  ? 'لحماية خصوصيتك ومنع أي شخص متطفل من الاطلاع على بياناتك أو العبث بها، لا يمكن فتح التطبيق إلا عبر رمز المرور أو بصمة الإصبع.\n\nإذا نسيت رمز المرور، يرجى المصادقة ببصمة الإصبع لتأكيد هويتك كمالك للجهاز وفتح التطبيق فوراً.' 
-                  : 'To protect your privacy and ensure no unauthorized person can view or tamper with your records, the app requires your PIN or biometric verification.\n\nIf you forgot your PIN, please authenticate using your registered fingerprint.'}
-              </p>
-            </div>
-
-            {/* Security Explanation Box */}
-            <div className="p-2.5 rounded-xl bg-black/60 border border-zinc-800 text-[11px] text-zinc-400 text-start flex items-start gap-2">
-              <Info size={16} className="text-blue-400 shrink-0 mt-0.5" />
-              <span>
-                {language === 'ar'
-                  ? 'ملاحظة لحماية أمانك: لا توجد أي خيارات لمسح البيانات من شاشة القفل لمنع ضياع سجلاتك إذا وقع الهاتف في يد شخص آخر.'
-                  : 'Security policy: No data wipe option exists on the lock screen to prevent accidental or malicious data loss.'}
-              </span>
-            </div>
-
-            <div className="space-y-2 pt-1">
-              {biometricEnabled && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForgotSecurityNotice(false);
-                    handleBiometricAuth();
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors"
-                >
-                  <Fingerprint size={16} />
-                  <span>{language === 'ar' ? 'فتح التطبيق ببصمة الإصبع' : 'Unlock with Biometrics'}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowForgotSecurityNotice(false)}
-                className="w-full py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold cursor-pointer transition-colors"
-              >
-                {language === 'ar' ? 'العودة ومحاولة إدخال الرمز' : 'Try Passcode Again'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

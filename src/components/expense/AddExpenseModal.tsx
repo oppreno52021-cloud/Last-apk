@@ -994,12 +994,14 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
                   {note ? (
                     <span className="text-slate-900 dark:text-white font-semibold line-clamp-1">{note}</span>
                   ) : (
-                    language === 'ar' ? 'إضافة ملاحظة أو تغيير التاريخ' : 'Add Note or Change Date'
+                    language === 'ar' ? 'الملاحظات والتاريخ' : 'Notes & Date'
                   )}
                 </span>
-                <span className="text-[10px] text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md">
-                  {isToday ? (language === 'ar' ? 'مسجل الآن' : 'Now') : date}
-                </span>
+                {!isToday && (
+                  <span className="text-[10px] text-slate-400 bg-slate-200/60 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md">
+                    {date}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1 text-slate-400">
                 {showNoteDate ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
