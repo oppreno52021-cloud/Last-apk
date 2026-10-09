@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Masrofy - Spending Intelligence</title>
+    <meta name="description" content="High-speed personal expense tracker and spending intelligence mobile app with real local database, budget pace calculation, and category analytics." />
+    <meta property="og:title" content="Masrofy - Spending Intelligence" />
+    <meta property="og:description" content="High-speed personal expense tracker and spending intelligence mobile app with real local database, budget pace calculation, and category analytics." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#2563EB" />
+    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700;800&family=Readex+Pro:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          // Theme based on System if not explicitly set
+          let theme = localStorage.getItem('masrofy_theme');
+          if (!theme) {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            theme = prefersDark ? 'dark' : 'light';
+          }
+          if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.setAttribute('data-theme', 'light');
+          }
+
+          // Language based on System if not explicitly set
+          let lang = localStorage.getItem('masrofy_lang');
+          if (!lang) {
+            const sysLang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
+            lang = sysLang.startsWith('ar') ? 'ar' : 'en';
+          }
+          document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+          document.documentElement.lang = lang;
+
+          const fontSize = localStorage.getItem('masrofy_font_size') || 'normal';
+          document.documentElement.setAttribute('data-font-size', fontSize);
+
+          let font = localStorage.getItem('masrofy_font');
+          if (!font || font === 'arial' || font === 'almarai' || font === 'cairo' || font === 'noto') {
+            font = 'alexandria';
+            try { localStorage.setItem('masrofy_font', 'alexandria'); } catch(e) {}
+          }
+          document.documentElement.setAttribute('data-font', font);
+        } catch(e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased selection:bg-blue-100 selection:text-blue-900">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
+:root {
+  color-scheme: light;
+  font-size: 16px; /* default 100% */
+}
+
+/* Dynamic Font Size Scaling */
+html[data-font-size="compact"] {
+  font-size: 14.5px; /* ~90% */
+}
+
+html[data-font-size="normal"] {
+  font-size: 16px; /* 100% */
+}
+
+html[data-font-size="large"] {
+  font-size: 17.5px; /* ~110% */
+}
+
+html[data-font-size="xlarge"] {
+  font-size: 19px; /* ~120% */
+}
+
+html.dark, :root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root {
+  --app-font: 'Alexandria', 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+}
+
+html[data-font="alexandria"] { --app-font: 'Alexandria', system-ui, -apple-system, sans-serif; }
+html[data-font="ibm"] { --app-font: 'IBM Plex Sans Arabic', sans-serif; }
+html[data-font="noto"] { --app-font: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif; }
+html[data-font="readex"] { --app-font: 'Readex Pro', sans-serif; }
+
+@layer base {
+  html, body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
+    overscroll-behavior-y: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  body {
+    font-family: var(--app-font, 'Alexandria', sans-serif);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    font-size: 0.9375rem; /* 15px comfortable base body size */
+    line-height: 1.5;
+  }
+
+  /* Universal typography: Use chosen app font (Alexandria by default) across ALL languages & UI */
+  html,
+  body,
+  button,
+  input,
+  select,
+  textarea,
+  * {
+    font-family: var(--app-font, 'Alexandria', system-ui, -apple-system, sans-serif) !important;
+  }
+
+  /* Explicit Arabic text styling (e.g. for the word "العربية" when viewed inside English mode) */
+  .arabic-text,
+  [lang="ar"],
+  [dir="rtl"] {
+    font-family: var(--app-font, 'Alexandria', sans-serif) !important;
+  }
+
+  /* Tabular numbers for financial balance and accounting values */
+  .tabular-nums,
+  [data-numeric="true"],
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--app-font, 'Alexandria', sans-serif) !important;
+  }
+}
+
+/* Universal scrollbar hiding - preserves scrolling behavior but removes visual bar */
+*, *::before, *::after, html, body {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Hide scrollbars for clean mobile appearance */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Smooth scrolling and native touch momentum */
+html, body, .no-scrollbar, [class*="overflow-"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+@keyframes toast-shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+

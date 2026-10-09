@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Masrofy</string>
+    <string name="title_activity_main">Masrofy</string>
+    <string name="package_name">com.masrofy.app</string>
+    <string name="custom_url_scheme">com.masrofy.app</string>
+</resources>
