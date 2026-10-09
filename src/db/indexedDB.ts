@@ -10,19 +10,17 @@ import {
 const DB_NAME = 'AuraSpendDB';
 const DB_VERSION = 1;
 
-export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'cat-general', name: 'عام', icon: 'Tag', color: '#3B82F6', type: 'expense', isDefault: true, isActive: true, sortOrder: 1, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
-];
+export const DEFAULT_CATEGORIES: Category[] = [];
 
-export const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'acc-cash', name: 'كاش', type: 'cash', openingBalance: 0, currency: 'EGP', color: '#64748B', icon: 'Banknote', isActive: true, isArchived: false, showOnHome: false, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' },
-];
+export const DEFAULT_ACCOUNTS: Account[] = [];
 
 export const DEFAULT_SETTINGS: Settings = {
   currency: 'EGP',
   currencySymbol: 'ج.م',
+  language: 'ar',
   theme: 'light',
   fontSize: 'normal',
+  numberFormat: 'arabic',
   notifications: true,
   biometricLock: false,
   pinLockEnabled: false,
@@ -177,6 +175,17 @@ class LocalDatabase {
       await this.zeroOutApp();
       try {
         localStorage.setItem('masrofy_zeroed_clean_v2', 'true');
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Wipe all categories and accounts migration
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('masrofy_empty_categories_accounts_v3') !== 'true') {
+      await this.clearStore('categories');
+      await this.clearStore('accounts');
+      try {
+        localStorage.setItem('masrofy_empty_categories_accounts_v3', 'true');
       } catch (e) {
         // ignore
       }

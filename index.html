@@ -20,11 +20,10 @@
     <script>
       (function() {
         try {
-          // Theme based on System if not explicitly set
+          // Default theme: Light on first use unless explicitly set to dark
           let theme = localStorage.getItem('masrofy_theme');
           if (!theme) {
-            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-            theme = prefersDark ? 'dark' : 'light';
+            theme = 'light';
           }
           if (theme === 'dark') {
             document.documentElement.classList.add('dark');

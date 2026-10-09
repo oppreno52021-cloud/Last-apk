@@ -162,16 +162,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const storedTheme = localStorage.getItem('masrofy_theme');
       if (storedTheme === 'dark' || storedTheme === 'light') {
         initialTheme = storedTheme;
-      } else if (typeof window !== 'undefined' && window.matchMedia) {
-        initialTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } else {
+        initialTheme = 'light';
       }
 
       const storedLang = localStorage.getItem('masrofy_lang');
       if (storedLang === 'ar' || storedLang === 'en') {
         initialLang = storedLang;
-      } else if (typeof navigator !== 'undefined') {
-        const sysLang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
-        initialLang = sysLang.startsWith('ar') ? 'ar' : 'en';
+      } else {
+        initialLang = 'ar';
       }
       const storedNumFormat = localStorage.getItem('masrofy_number_format') as NumberFormatOption;
       if (storedNumFormat === 'arabic' || storedNumFormat === 'western') {
@@ -304,14 +303,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ]);
 
       setExpenses(expList);
-      let initialCats = catList.length > 0 ? catList : DEFAULT_CATEGORIES;
-      const hasIncomeCat = initialCats.some(c => c.type === 'income' || c.id.startsWith('cat-inc-'));
-      if (!hasIncomeCat) {
-        const incomeCats = DEFAULT_CATEGORIES.filter(c => c.type === 'income');
-        initialCats = [...initialCats, ...incomeCats];
-        incomeCats.forEach(c => localDB.saveCategory(c));
-      }
-      setCategories(initialCats);
+      setCategories(catList);
       if (budgetData) setBudget(budgetData);
       const sanitizedAccounts = accList.map(a => (!a.currency || a.currency === 'NONE') ? { ...a, currency: 'EGP' } : a);
       setAccounts(sanitizedAccounts);
