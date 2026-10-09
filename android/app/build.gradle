@@ -20,13 +20,19 @@ android {
     }
     signingConfigs {
         release {
-            if (file('release.keystore').exists()) {
-                storeFile file('release.keystore')
-                storePassword 'masrofy123'
-                keyAlias 'masrofy'
-                keyPassword 'masrofy123'
+            def storeFilePath = System.getenv("KEYSTORE_FILE") ?: "release.keystore"
+            def hasStoreFile = file(storeFilePath).exists()
+            def storePwd = System.getenv("KEYSTORE_PASSWORD") ?: (project.hasProperty('RELEASE_STORE_PASSWORD') ? project.property('RELEASE_STORE_PASSWORD') : null)
+            def kAlias = System.getenv("KEY_ALIAS") ?: (project.hasProperty('RELEASE_KEY_ALIAS') ? project.property('RELEASE_KEY_ALIAS') : null)
+            def kPwd = System.getenv("KEY_PASSWORD") ?: (project.hasProperty('RELEASE_KEY_PASSWORD') ? project.property('RELEASE_KEY_PASSWORD') : null)
+
+            if (hasStoreFile && storePwd && kAlias && kPwd) {
+                storeFile file(storeFilePath)
+                storePassword storePwd
+                keyAlias kAlias
+                keyPassword kPwd
             } else {
-                signingConfig signingConfigs.debug
+                initWith(signingConfigs.debug)
             }
         }
     }

@@ -450,6 +450,7 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   // Submit Handler
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isSubmitting) return;
     setError(null);
 
     let finalAmountStr = amount;

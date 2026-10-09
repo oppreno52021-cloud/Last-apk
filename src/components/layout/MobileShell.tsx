@@ -30,11 +30,38 @@ export const MobileShell: React.FC = () => {
     settings,
     isLoading,
     language,
-    showToast
+    showToast,
+    expenses,
+    accounts,
+    categories,
+    recurring,
+    updateSettings
   } = useApp();
 
   const isLockEnabled = Boolean(settings.pinLockEnabled || settings.biometricLock);
-  const [showOnboarding, setShowOnboarding] = useState(!settings.hasCompletedOnboarding);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Derive onboarding state reliably from persisted data
+  useEffect(() => {
+    if (!isLoading) {
+      const isExistingUser = Boolean(
+        settings.hasCompletedOnboarding ||
+        expenses.length > 0 ||
+        accounts.length > 0 ||
+        categories.length > 0 ||
+        recurring.length > 0
+      );
+
+      if (!isExistingUser) {
+        setShowOnboarding(true);
+      } else {
+        setShowOnboarding(false);
+        if (!settings.hasCompletedOnboarding) {
+          updateSettings({ hasCompletedOnboarding: true });
+        }
+      }
+    }
+  }, [isLoading, settings.hasCompletedOnboarding, expenses.length, accounts.length, categories.length, recurring.length, updateSettings]);
   const [isLocked, setIsLocked] = useState<boolean>(() => {
     try {
       const pin = localStorage.getItem('masrofy_pin_lock') === 'true';

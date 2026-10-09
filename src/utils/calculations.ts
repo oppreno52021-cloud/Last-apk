@@ -1344,31 +1344,203 @@ export interface AppFullBackup {
 }
 
 export function validateBackupJSON(jsonStr: string): { valid: boolean; error?: string; data?: AppFullBackup } {
+  if (!jsonStr || typeof jsonStr !== 'string' || !jsonStr.trim()) {
+    return { valid: false, error: 'ملف النسخة الاحتياطية فارغ أو غير صالح' };
+  }
+
   try {
     const parsed = JSON.parse(jsonStr);
-    if (!parsed || typeof parsed !== 'object') {
-      return { valid: false, error: 'Invalid backup file: not a JSON object' };
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { valid: false, error: 'ملف النسخة الاحتياطية غير صالح: البنية الأساسية ليست كائناً صحيحاً' };
     }
+
+    // Supported version check (supports v1 and future v2 backups)
+    if (parsed.version !== undefined) {
+      if (typeof parsed.version !== 'number' || isNaN(parsed.version) || parsed.version < 1 || parsed.version > 2) {
+        return { valid: false, error: 'إصدار ملف النسخة الاحتياطية غير مدعوم أو غير متوافق مع هذا التطبيق' };
+      }
+    }
+
+    // Expenses array is mandatory
     if (!Array.isArray(parsed.expenses)) {
-      return { valid: false, error: 'Invalid backup file: missing expenses array' };
+      return { valid: false, error: 'ملف النسخة الاحتياطية غير صالح: مصفوفة المعاملات (expenses) مفقودة' };
     }
-    
-    // Ensure all arrays exist with safe fallbacks
+
+    // Validate each expense item strictly
+    const seenExpenseIds = new Set<string>();
+    const validatedExpenses: Expense[] = [];
+
+    for (let i = 0; i < parsed.expenses.length; i++) {
+      const exp = parsed.expenses[i];
+      if (!exp || typeof exp !== 'object') {
+        return { valid: false, error: `المعاملة رقم ${i + 1} في النسخة الاحتياطية تالفة أو غير صالحة` };
+      }
+      if (typeof exp.id !== 'string' || !exp.id.trim()) {
+        return { valid: false, error: `المعاملة رقم ${i + 1} لا تحتوي على معرّف صالح (ID)` };
+      }
+      if (typeof exp.amount !== 'number' || isNaN(exp.amount) || !isFinite(exp.amount) || exp.amount < 0) {
+        return { valid: false, error: `المعاملة "${exp.id}" تحتوي على قيمة مالية غير صحيحة أو سالبة` };
+      }
+      if (exp.type !== 'expense' && exp.type !== 'income' && exp.type !== 'transfer') {
+        return { valid: false, error: `المعاملة "${exp.id}" تحتوي على نوع غير معروف: ${exp.type}` };
+      }
+      if (typeof exp.date !== 'string' || !exp.date.trim()) {
+        return { valid: false, error: `المعاملة "${exp.id}" تحتوي على تاريخ غير صالح` };
+      }
+
+      // Prevent duplicate records within the backup
+      if (!seenExpenseIds.has(exp.id)) {
+        seenExpenseIds.add(exp.id);
+        validatedExpenses.push({
+          ...exp,
+          amount: Math.round(exp.amount * 100) / 100,
+          categoryId: typeof exp.categoryId === 'string' ? exp.categoryId : 'cat-other',
+          accountId: typeof exp.accountId === 'string' ? exp.accountId : 'acc-cash',
+          paymentMethodId: typeof exp.paymentMethodId === 'string' ? exp.paymentMethodId : (exp.accountId || 'acc-cash'),
+          note: typeof exp.note === 'string' ? exp.note : '',
+          merchant: typeof exp.merchant === 'string' ? exp.merchant : (exp.note || ''),
+          date: exp.date,
+          time: typeof exp.time === 'string' ? exp.time : '12:00',
+          createdAt: typeof exp.createdAt === 'string' ? exp.createdAt : new Date().toISOString(),
+          updatedAt: typeof exp.updatedAt === 'string' ? exp.updatedAt : new Date().toISOString(),
+          isDeleted: Boolean(exp.isDeleted),
+        });
+      }
+    }
+
+    // Validate categories if present
+    const validatedCategories: Category[] = [];
+    const seenCatIds = new Set<string>();
+    if (Array.isArray(parsed.categories)) {
+      for (let i = 0; i < parsed.categories.length; i++) {
+        const cat = parsed.categories[i];
+        if (cat && typeof cat === 'object' && typeof cat.id === 'string' && cat.id.trim()) {
+          if (!seenCatIds.has(cat.id)) {
+            seenCatIds.add(cat.id);
+            validatedCategories.push({
+              id: cat.id,
+              name: typeof cat.name === 'string' ? cat.name : 'فئة',
+              icon: typeof cat.icon === 'string' ? cat.icon : 'Tag',
+              color: typeof cat.color === 'string' ? cat.color : '#3B82F6',
+              type: cat.type === 'income' ? 'income' : (cat.type === 'both' ? 'both' : 'expense'),
+              isDefault: Boolean(cat.isDefault),
+              isActive: cat.isActive !== false,
+              sortOrder: typeof cat.sortOrder === 'number' && !isNaN(cat.sortOrder) ? cat.sortOrder : i + 1,
+              createdAt: typeof cat.createdAt === 'string' ? cat.createdAt : new Date().toISOString(),
+              updatedAt: typeof cat.updatedAt === 'string' ? cat.updatedAt : new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+
+    // Validate accounts if present
+    const validatedAccounts: Account[] = [];
+    const seenAccIds = new Set<string>();
+    if (Array.isArray(parsed.accounts)) {
+      for (let i = 0; i < parsed.accounts.length; i++) {
+        const acc = parsed.accounts[i];
+        if (acc && typeof acc === 'object' && typeof acc.id === 'string' && acc.id.trim()) {
+          if (!seenAccIds.has(acc.id)) {
+            seenAccIds.add(acc.id);
+            const rawBalance = typeof acc.openingBalance === 'number' && !isNaN(acc.openingBalance) && isFinite(acc.openingBalance)
+              ? acc.openingBalance
+              : 0;
+            validatedAccounts.push({
+              id: acc.id,
+              name: typeof acc.name === 'string' ? acc.name : 'حساب',
+              type: acc.type || 'wallet',
+              openingBalance: Math.round(rawBalance * 100) / 100,
+              currency: typeof acc.currency === 'string' ? acc.currency : 'EGP',
+              color: typeof acc.color === 'string' ? acc.color : '#3B82F6',
+              icon: typeof acc.icon === 'string' ? acc.icon : 'Wallet',
+              isActive: acc.isActive !== false,
+              isArchived: Boolean(acc.isArchived),
+              showOnHome: Boolean(acc.showOnHome),
+              createdAt: typeof acc.createdAt === 'string' ? acc.createdAt : new Date().toISOString(),
+              updatedAt: typeof acc.updatedAt === 'string' ? acc.updatedAt : new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+
+    // Validate budget if present
+    let validatedBudget: Budget | undefined = undefined;
+    if (parsed.budget && typeof parsed.budget === 'object') {
+      const bAmount = typeof parsed.budget.amount === 'number' && !isNaN(parsed.budget.amount) && isFinite(parsed.budget.amount) && parsed.budget.amount >= 0
+        ? Math.round(parsed.budget.amount * 100) / 100
+        : 0;
+      validatedBudget = {
+        id: typeof parsed.budget.id === 'string' ? parsed.budget.id : 'bgt-monthly',
+        periodStart: typeof parsed.budget.periodStart === 'string' ? parsed.budget.periodStart : '2026-01-01',
+        periodEnd: typeof parsed.budget.periodEnd === 'string' ? parsed.budget.periodEnd : '2026-01-31',
+        amount: bAmount,
+        currency: typeof parsed.budget.currency === 'string' ? parsed.budget.currency : 'EGP',
+        createdAt: typeof parsed.budget.createdAt === 'string' ? parsed.budget.createdAt : new Date().toISOString(),
+        updatedAt: typeof parsed.budget.updatedAt === 'string' ? parsed.budget.updatedAt : new Date().toISOString(),
+      };
+    }
+
+    // Validate recurring if present
+    const validatedRecurring: RecurringTransaction[] = [];
+    const seenRecIds = new Set<string>();
+    if (Array.isArray(parsed.recurring)) {
+      for (const rec of parsed.recurring) {
+        if (rec && typeof rec === 'object' && typeof rec.id === 'string' && rec.id.trim()) {
+          if (!seenRecIds.has(rec.id)) {
+            seenRecIds.add(rec.id);
+            const rAmount = typeof rec.amount === 'number' && !isNaN(rec.amount) && isFinite(rec.amount) && rec.amount >= 0
+              ? Math.round(rec.amount * 100) / 100
+              : 0;
+            validatedRecurring.push({
+              id: rec.id,
+              type: rec.type === 'income' ? 'income' : 'expense',
+              amount: rAmount,
+              currency: typeof rec.currency === 'string' ? rec.currency : 'EGP',
+              categoryId: typeof rec.categoryId === 'string' ? rec.categoryId : 'cat-other',
+              accountId: typeof rec.accountId === 'string' ? rec.accountId : 'acc-cash',
+              frequency: ['daily', 'weekly', 'monthly', 'yearly'].includes(rec.frequency) ? rec.frequency : 'monthly',
+              nextOccurrence: typeof rec.nextOccurrence === 'string' ? rec.nextOccurrence : getLocalDateString(),
+              note: typeof rec.note === 'string' ? rec.note : '',
+              isActive: rec.isActive !== false,
+              lastProcessedDate: typeof rec.lastProcessedDate === 'string' ? rec.lastProcessedDate : undefined,
+              createdAt: typeof rec.createdAt === 'string' ? rec.createdAt : new Date().toISOString(),
+              updatedAt: typeof rec.updatedAt === 'string' ? rec.updatedAt : new Date().toISOString(),
+            });
+          }
+        }
+      }
+    }
+
+    // Settings fallback
+    const validatedSettings: Settings = {
+      ...(typeof parsed.settings === 'object' && parsed.settings ? parsed.settings : {}),
+      hasCompletedOnboarding: true,
+    };
+
     const validData: AppFullBackup = {
-      version: parsed.version || 1,
-      exportedAt: parsed.exportedAt || new Date().toISOString(),
-      app: parsed.app || 'Masrofy',
-      expenses: parsed.expenses,
-      categories: Array.isArray(parsed.categories) ? parsed.categories : [],
-      budget: (parsed.budget && typeof parsed.budget === 'object') ? parsed.budget : { id: 'budget-monthly', amount: 0, period: 'monthly', updatedAt: new Date().toISOString() },
-      accounts: Array.isArray(parsed.accounts) ? parsed.accounts : [],
-      recurring: Array.isArray(parsed.recurring) ? parsed.recurring : [],
-      settings: (parsed.settings && typeof parsed.settings === 'object') ? parsed.settings : {} as any,
+      version: typeof parsed.version === 'number' ? parsed.version : 1,
+      exportedAt: typeof parsed.exportedAt === 'string' ? parsed.exportedAt : new Date().toISOString(),
+      app: typeof parsed.app === 'string' ? parsed.app : 'Masrofy',
+      expenses: validatedExpenses,
+      categories: validatedCategories,
+      budget: validatedBudget || {
+        id: 'bgt-default',
+        periodStart: '2026-01-01',
+        periodEnd: '2026-01-31',
+        amount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      accounts: validatedAccounts,
+      recurring: validatedRecurring,
+      settings: validatedSettings,
     };
 
     return { valid: true, data: validData };
   } catch (err: any) {
-    return { valid: false, error: `JSON parse error: ${err?.message || 'Malformed file'}` };
+    return { valid: false, error: `خطأ في قراءة ملف JSON: ${err?.message || 'الملف تالف'}` };
   }
 }
 

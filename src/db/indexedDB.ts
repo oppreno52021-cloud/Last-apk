@@ -31,7 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showWalletsOnHome: false,
   firstDayOfMonth: 1,
   budgetNotificationThreshold: 80,
-  hasCompletedOnboarding: true,
+  hasCompletedOnboarding: false,
   isDemoInitialized: true,
 };
 
@@ -60,17 +60,18 @@ class LocalDatabase {
   private db: IDBDatabase | null = null;
   private dbPromise: Promise<IDBDatabase> | null = null;
 
-  private async openDB(): Promise<IDBDatabase> {
+  async openDB(): Promise<IDBDatabase> {
     if (this.db) return this.db;
     if (this.dbPromise) return this.dbPromise;
 
     this.dbPromise = new Promise((resolve, reject) => {
-      if (typeof window === 'undefined' || !window.indexedDB) {
+      const idb = typeof indexedDB !== 'undefined' ? indexedDB : (typeof window !== 'undefined' ? window.indexedDB : null);
+      if (!idb) {
         reject(new Error('IndexedDB is not supported'));
         return;
       }
 
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      const request = idb.open(DB_NAME, DB_VERSION);
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -116,7 +117,11 @@ class LocalDatabase {
 
       request.onsuccess = async (event) => {
         this.db = (event.target as IDBOpenDBRequest).result;
-        await this.initializeDefaultsIfNeeded();
+        try {
+          await this.initializeDefaultsIfNeeded();
+        } catch (initErr) {
+          console.warn('Non-destructive initialization check warning:', initErr);
+        }
         resolve(this.db);
       };
 
@@ -138,73 +143,80 @@ class LocalDatabase {
       }
     }
 
-    const categories = await this.getAll<Category>('categories');
-    if (categories.length === 0) {
-      for (const cat of DEFAULT_CATEGORIES) {
-        await this.put('categories', cat);
-      }
-    }
+    // Safely check existing data across stores without any destructive actions
+    const [existingExpenses, existingAccounts, existingCategories, existingBudgets, existingRecurring] = await Promise.all([
+      this.getAll<Expense>('expenses'),
+      this.getAll<Account>('accounts'),
+      this.getAll<Category>('categories'),
+      this.getAll<Budget>('budgets'),
+      this.getAll<RecurringTransaction>('recurring'),
+    ]);
 
-    const accounts = await this.getAll<Account>('accounts');
-    if (accounts.length === 0) {
-      for (const acc of DEFAULT_ACCOUNTS) {
-        await this.put('accounts', acc);
-      }
-    }
-
-    const budgets = await this.getAll<Budget>('budgets');
-    if (budgets.length === 0) {
-      await this.put('budgets', DEFAULT_BUDGET);
-    }
-
-    const recurring = await this.getAll<RecurringTransaction>('recurring');
-    if (recurring.length === 0) {
-      for (const rec of DEFAULT_RECURRING) {
-        await this.put('recurring', rec);
-      }
-    }
-
+    // Check existing settings
     let settings = await this.get<Settings>('settings', 'current');
     if (!settings) {
-      settings = { ...DEFAULT_SETTINGS, isDemoInitialized: true };
+      // If there are already records, this is an existing database from previous versions or an upgrade
+      const isExistingUser = existingExpenses.length > 0 || 
+                             existingAccounts.length > 0 || 
+                             existingCategories.length > 0 || 
+                             existingBudgets.some(b => b.amount > 0) || 
+                             existingRecurring.length > 0;
+      settings = {
+        ...DEFAULT_SETTINGS,
+        hasCompletedOnboarding: isExistingUser,
+        isDemoInitialized: true,
+      };
       await this.put('settings', { ...settings, id: 'current' });
     }
 
-    // Zeroing migration: ensure any previously cached demo transactions or balances are zeroed out completely
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('masrofy_zeroed_clean_v2') !== 'true') {
-      await this.zeroOutApp();
-      try {
-        localStorage.setItem('masrofy_zeroed_clean_v2', 'true');
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    // Wipe all categories and accounts migration
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('masrofy_empty_categories_accounts_v3') !== 'true') {
-      await this.clearStore('categories');
-      await this.clearStore('accounts');
-      try {
-        localStorage.setItem('masrofy_empty_categories_accounts_v3', 'true');
-      } catch (e) {
-        // ignore
-      }
+    // Initialize budget only if completely missing
+    if (existingBudgets.length === 0) {
+      await this.put('budgets', DEFAULT_BUDGET);
     }
   }
 
+  /**
+   * Reset application data to empty state.
+   * STRICT SAFETY RULE: Must ONLY be called upon explicit, confirmed user reset action from Settings.
+   * NEVER call this automatically on startup, upgrade, or missing metadata.
+   */
   async zeroOutApp(): Promise<void> {
-    await this.clearStore('expenses');
-    await this.clearStore('recurring');
+    const db = await this.openDB();
+    const storeNames = ['expenses', 'recurring', 'accounts', 'budgets'];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(storeNames, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
 
-    const accounts = await this.getAll<Account>('accounts');
-    for (const acc of accounts) {
-      await this.put('accounts', { ...acc, openingBalance: 0 });
-    }
+      try {
+        tx.objectStore('expenses').clear();
+        tx.objectStore('recurring').clear();
 
-    const budgets = await this.getAll<Budget>('budgets');
-    for (const bgt of budgets) {
-      await this.put('budgets', { ...bgt, amount: 0 });
-    }
+        const accStore = tx.objectStore('accounts');
+        const accReq = accStore.openCursor();
+        accReq.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            cursor.update({ ...cursor.value, openingBalance: 0 });
+            cursor.continue();
+          }
+        };
+
+        const bgtStore = tx.objectStore('budgets');
+        const bgtReq = bgtStore.openCursor();
+        bgtReq.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            cursor.update({ ...cursor.value, amount: 0 });
+            cursor.continue();
+          }
+        };
+      } catch (err) {
+        try { tx.abort(); } catch (_) {}
+        reject(err);
+      }
+    });
   }
 
   // Generic helpers
@@ -544,31 +556,85 @@ class LocalDatabase {
     recurring: RecurringTransaction[];
     settings?: Settings;
   }): Promise<void> {
-    await this.clearStore('expenses');
-    await this.clearStore('categories');
-    await this.clearStore('budgets');
-    await this.clearStore('accounts');
-    await this.clearStore('recurring');
-    await this.clearStore('settings');
+    if (!backup || !Array.isArray(backup.expenses) || !Array.isArray(backup.categories) || !Array.isArray(backup.accounts) || !Array.isArray(backup.recurring)) {
+      throw new Error('بيانات النسخة الاحتياطية غير صالحة ولا تحتوي على المجموعات الإلزامية');
+    }
 
-    for (const exp of backup.expenses) {
-      await this.put('expenses', exp);
-    }
-    for (const cat of backup.categories) {
-      await this.put('categories', cat);
-    }
-    if (backup.budget) {
-      await this.put('budgets', backup.budget);
-    }
-    for (const acc of backup.accounts) {
-      await this.put('accounts', acc);
-    }
-    for (const rec of backup.recurring) {
-      await this.put('recurring', rec);
-    }
-    if (backup.settings) {
-      await this.put('settings', { ...backup.settings, id: 'current' });
-    }
+    const db = await this.openDB();
+    const storeNames = ['expenses', 'categories', 'budgets', 'accounts', 'recurring', 'settings'];
+
+    return new Promise((resolve, reject) => {
+      let isSettled = false;
+      const tx = db.transaction(storeNames, 'readwrite');
+
+      tx.onerror = (event) => {
+        if (!isSettled) {
+          isSettled = true;
+          const err = (event.target as IDBTransaction)?.error || tx.error;
+          reject(new Error(err?.message || 'فشلت عملية استعادة النسخة الاحتياطية أثناء كتابة البيانات'));
+        }
+      };
+
+      tx.onabort = (event) => {
+        if (!isSettled) {
+          isSettled = true;
+          const err = (event.target as IDBTransaction)?.error || tx.error;
+          reject(new Error(err?.message || 'تم التراجع عن استعادة النسخة الاحتياطية للحفاظ على البيانات الأصلية'));
+        }
+      };
+
+      tx.oncomplete = () => {
+        if (!isSettled) {
+          isSettled = true;
+          resolve();
+        }
+      };
+
+      try {
+        const expStore = tx.objectStore('expenses');
+        const catStore = tx.objectStore('categories');
+        const bgtStore = tx.objectStore('budgets');
+        const accStore = tx.objectStore('accounts');
+        const recStore = tx.objectStore('recurring');
+        const setStore = tx.objectStore('settings');
+
+        // Clear existing data atomically inside this single transaction
+        expStore.clear();
+        catStore.clear();
+        bgtStore.clear();
+        accStore.clear();
+        recStore.clear();
+        setStore.clear();
+
+        // Populate validated backup records
+        for (const exp of backup.expenses) {
+          expStore.put(exp);
+        }
+        for (const cat of backup.categories) {
+          catStore.put(cat);
+        }
+        if (backup.budget) {
+          bgtStore.put(backup.budget);
+        }
+        for (const acc of backup.accounts) {
+          accStore.put(acc);
+        }
+        for (const rec of backup.recurring) {
+          recStore.put(rec);
+        }
+        if (backup.settings) {
+          setStore.put({ ...backup.settings, id: 'current' });
+        }
+      } catch (err) {
+        try {
+          tx.abort();
+        } catch (_) {}
+        if (!isSettled) {
+          isSettled = true;
+          reject(err);
+        }
+      }
+    });
   }
 
   async resetToEmpty(): Promise<void> {

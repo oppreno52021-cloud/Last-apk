@@ -33,11 +33,10 @@
             document.documentElement.setAttribute('data-theme', 'light');
           }
 
-          // Language based on System if not explicitly set
+          // Default language: Arabic on first run unless explicitly set
           let lang = localStorage.getItem('masrofy_lang');
           if (!lang) {
-            const sysLang = (navigator.language || (navigator.languages && navigator.languages[0]) || '').toLowerCase();
-            lang = sysLang.startsWith('ar') ? 'ar' : 'en';
+            lang = 'ar';
           }
           document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
           document.documentElement.lang = lang;
