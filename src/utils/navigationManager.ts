@@ -10,19 +10,16 @@ class NavigationManager {
   private modalStack: ModalEntry[] = [];
   private currentTab: string = 'home';
   private onSwitchTab?: (tab: 'home' | 'transactions' | 'insights' | 'settings') => void;
-  private onShowExitToast?: () => void;
-  private lastBackPressTime: number = 0;
   private isLocked: boolean = false;
   private isInitialized: boolean = false;
 
   public init(
     initialTab: string,
     onSwitchTab: (tab: any) => void,
-    onShowExitToast: () => void
+    _onShowExitToast?: () => void
   ) {
     this.currentTab = initialTab;
     this.onSwitchTab = onSwitchTab;
-    this.onShowExitToast = onShowExitToast;
 
     if (this.isInitialized) return;
     this.isInitialized = true;

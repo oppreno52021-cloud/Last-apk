@@ -10,7 +10,8 @@ import {
   getTodayExpenses, 
   getLocalDateString,
   toArabicNumerals,
-  sumMoney
+  sumMoney,
+  getCurrencySymbol
 } from '../../utils/calculations';
 import { 
   getCategoryDisplayName, 
@@ -32,7 +33,6 @@ import {
 } from 'lucide-react';
 import { useBackHandler } from '../../hooks/useBackHandler';
 import { QuickBudgetModal } from './QuickBudgetModal';
-import { getCurrencySymbol } from '../../utils/calculations';
 
 export const HomeScreen: React.FC = () => {
   const { 

@@ -28,11 +28,9 @@ export const MobileShell: React.FC = () => {
     viewingExpense, 
     setViewingExpense,
     settings,
-    updateSettings,
     isLoading,
     language,
-    showToast,
-    resetAllData
+    showToast
   } = useApp();
 
   const isLockEnabled = Boolean(settings.pinLockEnabled || settings.biometricLock);

@@ -752,9 +752,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.canceled) return;
 
       if (result.success) {
-        showToast(currentLanguage === 'ar' ? 'تم تنزيل ملف الإكسل (CSV) في التحميلات بنجاح' : 'CSV file downloaded to Downloads successfully');
+        showToast(currentLanguage === 'ar' ? 'تم حفظ ملف الإكسل (CSV) بنجاح' : 'CSV file saved successfully');
       } else {
-        showToast(currentLanguage === 'ar' ? 'حدث خطأ أثناء تنزيل الملف' : 'Error downloading file');
+        showToast(currentLanguage === 'ar' ? 'حدث خطأ أثناء حفظ الملف' : 'Error saving file');
       }
     } catch (err: any) {
       console.error(err);
@@ -827,9 +827,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.canceled) return;
 
       if (result.success) {
-        showToast(currentLanguage === 'ar' ? 'تم تنزيل النسخة الاحتياطية (JSON) في التحميلات بنجاح' : 'Backup downloaded to Downloads successfully');
+        showToast(currentLanguage === 'ar' ? 'تم حفظ النسخة الاحتياطية (JSON) بنجاح' : 'Backup saved successfully');
       } else {
-        showToast(currentLanguage === 'ar' ? 'حدث خطأ أثناء تنزيل النسخة الاحتياطية' : 'Error downloading backup');
+        showToast(currentLanguage === 'ar' ? 'حدث خطأ أثناء حفظ النسخة الاحتياطية' : 'Error saving backup');
       }
     } catch (err: any) {
       console.error(err);

@@ -1,20 +1,16 @@
 package com.masrofy.app;
 
-import android.app.DownloadManager;
+import android.app.Activity;
 import android.content.ContentResolver;
-import android.content.ContentValues;
-import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Environment;
-import android.provider.MediaStore;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
@@ -23,84 +19,67 @@ public class NativeDownloaderPlugin extends Plugin {
 
     @PluginMethod
     public void downloadFile(PluginCall call) {
-        String filename = call.getString("filename", "export.csv");
-        String content = call.getString("content", "");
-        String mimeType = call.getString("mimeType", "text/csv");
+        String filename = call.getString("filename", "Masrofy_Backup.json");
+        String mimeType = call.getString("mimeType", "application/json");
 
         if (filename == null || filename.trim().isEmpty()) {
-            filename = "Masrofy_Export_" + System.currentTimeMillis() + ".csv";
-        }
-        if (content == null) {
-            content = "";
+            filename = "Masrofy_Export_" + System.currentTimeMillis() + ".json";
         }
         if (mimeType == null || mimeType.trim().isEmpty()) {
-            mimeType = "text/csv";
+            mimeType = "*/*";
         }
 
         try {
-            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-            Uri fileUri = null;
+            // Android Storage Access Framework (SAF) - ACTION_CREATE_DOCUMENT
+            // Opens native Android System File Picker to let the user save to Downloads, Documents, SD card, Drive, etc.
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType(mimeType);
+            intent.putExtra(Intent.EXTRA_TITLE, filename);
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Modern Android 10+ (API 29+) MediaStore.Downloads API
-                // Writes directly to user's real Downloads folder without requiring dangerous permissions
-                ContentValues values = new ContentValues();
-                values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
-                values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
-                values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+            startActivityForResult(call, intent, "saveFileResult");
+        } catch (Exception e) {
+            call.reject("Could not launch Android file picker: " + e.getMessage(), e);
+        }
+    }
 
-                ContentResolver resolver = getContext().getContentResolver();
-                fileUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+    @ActivityCallback
+    private void saveFileResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
 
-                if (fileUri != null) {
-                    try (OutputStream os = resolver.openOutputStream(fileUri)) {
+        if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
+            Uri targetUri = result.getData().getData();
+            if (targetUri != null) {
+                try {
+                    String content = call.getString("content", "");
+                    byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+
+                    ContentResolver resolver = getContext().getContentResolver();
+                    try (OutputStream os = resolver.openOutputStream(targetUri)) {
                         if (os != null) {
                             os.write(bytes);
                             os.flush();
+                        } else {
+                            throw new Exception("Unable to open output stream for chosen location");
                         }
                     }
 
-                    values.clear();
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0);
-                    resolver.update(fileUri, values, null, null);
-                } else {
-                    throw new Exception("Could not create MediaStore entry for " + filename);
-                }
-            } else {
-                // Android 9 and older: Direct write to public Downloads directory
-                File downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                if (!downloadDir.exists()) {
-                    downloadDir.mkdirs();
-                }
-                File file = new File(downloadDir, filename);
-                try (FileOutputStream fos = new FileOutputStream(file)) {
-                    fos.write(bytes);
-                    fos.flush();
-                }
-                fileUri = Uri.fromFile(file);
-
-                DownloadManager dm = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
-                if (dm != null) {
-                    dm.addCompletedDownload(
-                        filename,
-                        "Masrofy Export",
-                        true,
-                        mimeType,
-                        file.getAbsolutePath(),
-                        file.length(),
-                        true
-                    );
+                    JSObject ret = new JSObject();
+                    ret.put("success", true);
+                    ret.put("uri", targetUri.toString());
+                    call.resolve(ret);
+                    return;
+                } catch (Exception e) {
+                    call.reject("Failed to write file to selected location: " + e.getMessage(), e);
+                    return;
                 }
             }
-
-            JSObject ret = new JSObject();
-            ret.put("success", true);
-            ret.put("uri", fileUri != null ? fileUri.toString() : "");
-            call.resolve(ret);
-
-        } catch (Exception e) {
-            call.reject("Failed to save file to Downloads: " + e.getMessage(), e);
         }
+
+        // User dismissed, pressed back, or canceled the file picker
+        JSObject ret = new JSObject();
+        ret.put("success", false);
+        ret.put("canceled", true);
+        call.resolve(ret);
     }
 }

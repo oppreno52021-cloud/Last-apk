@@ -10,7 +10,7 @@ interface NativeDownloaderPlugin {
     filename: string;
     content: string;
     mimeType: string;
-  }): Promise<{ success: boolean; uri?: string }>;
+  }): Promise<{ success: boolean; uri?: string; canceled?: boolean }>;
 }
 
 const NativeDownloader = registerPlugin<NativeDownloaderPlugin>('NativeDownloader');
@@ -34,6 +34,9 @@ export async function exportFile({
       });
       if (res && res.success) {
         return { success: true, method: 'download', uri: res.uri };
+      }
+      if (res && res.canceled) {
+        return { success: false, method: 'download', canceled: true };
       }
     } catch (pluginErr: any) {
       console.warn('NativeDownloader plugin error, attempting Filesystem fallback:', pluginErr);
