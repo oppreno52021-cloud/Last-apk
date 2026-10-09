@@ -1,9 +1,19 @@
 /**
  * Cross-platform file export utility for Web & Android Capacitor APK
- * Directly saves/downloads files into the user's Downloads or Documents folder
+ * Directly saves/downloads files into the user's phone Downloads folder without opening share dialogs
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+
+interface NativeDownloaderPlugin {
+  downloadFile(options: {
+    filename: string;
+    content: string;
+    mimeType: string;
+  }): Promise<{ success: boolean; uri?: string }>;
+}
+
+const NativeDownloader = registerPlugin<NativeDownloaderPlugin>('NativeDownloader');
 
 export async function exportFile({
   filename,
@@ -13,50 +23,57 @@ export async function exportFile({
   filename: string;
   content: string;
   mimeType: string;
-}): Promise<{ success: boolean; method: 'download'; canceled?: boolean; error?: string }> {
-  let savedNatively = false;
-
-  // 1. Android Native APK (Capacitor Native Platform):
-  // Saves file directly into user storage Downloads / Documents folder without opening any share sheet
+}): Promise<{ success: boolean; method: 'download'; canceled?: boolean; error?: string; uri?: string }> {
+  // 1. Android Native Platform: Primary & Direct Download via NativeDownloader (MediaStore.Downloads)
   if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
     try {
-      // Check and request storage permissions if required on Android
+      const res = await NativeDownloader.downloadFile({
+        filename,
+        content,
+        mimeType,
+      });
+      if (res && res.success) {
+        return { success: true, method: 'download', uri: res.uri };
+      }
+    } catch (pluginErr: any) {
+      console.warn('NativeDownloader plugin error, attempting Filesystem fallback:', pluginErr);
+    }
+
+    // 2. Android Capacitor Filesystem Fallback
+    try {
       try {
         const perm = await Filesystem.checkPermissions();
         if (perm.publicStorage !== 'granted') {
           await Filesystem.requestPermissions();
         }
-      } catch (pErr) {
-        // Permissions not needed or auto-granted on modern Android Scoped Storage
-      }
+      } catch {}
 
-      // First attempt: write to Public Documents directory
+      // Write to public Documents or External Downloads
       try {
-        await Filesystem.writeFile({
+        const docResult = await Filesystem.writeFile({
           path: filename,
           data: content,
           directory: Directory.Documents,
           encoding: Encoding.UTF8,
           recursive: true,
         });
-        savedNatively = true;
+        return { success: true, method: 'download', uri: docResult.uri };
       } catch {
-        // Fallback: write to Downloads folder under External Storage
-        await Filesystem.writeFile({
+        const extResult = await Filesystem.writeFile({
           path: `Download/${filename}`,
           data: content,
           directory: Directory.ExternalStorage,
           encoding: Encoding.UTF8,
           recursive: true,
         });
-        savedNatively = true;
+        return { success: true, method: 'download', uri: extResult.uri };
       }
-    } catch (err: any) {
-      console.warn('Capacitor native filesystem export failed, falling back to Web API:', err);
+    } catch (fsErr: any) {
+      console.warn('Filesystem fallback failed:', fsErr);
     }
   }
 
-  // 2. Direct Web & Mobile Browser Download directly to device Downloads folder
+  // 3. Web & Mobile Browser Direct Download (<a download>)
   try {
     const blob = new Blob([content], { type: `${mimeType};charset=utf-8;` });
     const url = URL.createObjectURL(blob);
@@ -69,14 +86,11 @@ export async function exportFile({
     setTimeout(() => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    }, 300);
+    }, 400);
 
     return { success: true, method: 'download' };
   } catch (err: any) {
-    if (savedNatively) {
-      return { success: true, method: 'download' };
-    }
-    console.error('Download link failed:', err);
+    console.error('Browser download failed:', err);
     return { success: false, method: 'download', error: err?.message || 'Download failed' };
   }
 }
